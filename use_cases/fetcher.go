@@ -2,6 +2,7 @@ package use_cases
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 
@@ -39,6 +40,10 @@ func (f Fetcher) Fetch(ctx context.Context, from, to int) error {
 	for {
 		select {
 		case pokemonIncoming := <-g:
+			//API bug handling
+			if pokemonIncoming.Name == "" {
+				return errors.New("API error")
+			}
 			pokemons = append(pokemons, pokemonIncoming)
 		case signal := <-errSignal:
 			if signal.hasError {
@@ -52,8 +57,6 @@ func (f Fetcher) Fetch(ctx context.Context, from, to int) error {
 
 }
 
-// source: http://www.golangpatterns.info/concurrency/generators
-// improve: from 2.7 sec per call to potential parallelism (2.21 sec per 500 calls)
 func generator(from, to int, fn api, errSignal chan errorSignal) <-chan models.Pokemon {
 	ch := make(chan models.Pokemon)
 	wg := sync.WaitGroup{}
