@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	numWorkers = 3
+	numWorkers = 10
 )
 
 type reader interface {
-	Read() (<-chan models.IncomingPokemon, error)
+	Read() <-chan models.IncomingPokemon
 }
 
 type saver interface {
@@ -35,39 +35,86 @@ func NewRefresher(reader reader, saver saver, fetcher fetcher) Refresher {
 }
 
 func (r Refresher) Refresh(ctx context.Context) error {
-	pokemonIncoming, err := r.Read()
-	if err != nil {
-		return err
-	}
 
-	var pokemons []models.Pokemon
+	stages := r.save(
+		r.feed(
+			r.read(ctx),
+		),
+	)
 
-	// fan out pattern
-	workers := make([]<-chan models.IncomingPokemon, numWorkers)
-	for i := range workers {
-		workers[i] = r.feedPokemonWithAbility(pokemonIncoming)
-	}
-
-	// fan in pattern
-	for incomingPokemon := range fanIn(workers...) {
-		if incomingPokemon.Error != nil {
-			return incomingPokemon.Error
-		}
-
-		pokemons = append(pokemons, incomingPokemon.Pokemon)
-	}
-
-	if err := r.Save(ctx, pokemons); err != nil {
-		return err
-	}
-
-	return nil
+	return <-stages
 }
 
-func (r Refresher) feedPokemonWithAbility(incomingPokemon <-chan models.IncomingPokemon) <-chan models.IncomingPokemon {
+func (r Refresher) read(ctx context.Context) (context.Context, <-chan models.IncomingPokemon) {
+	return ctx, r.Read()
+}
+
+func (r Refresher) feed(ctx context.Context, queue <-chan models.IncomingPokemon) (context.Context, <-chan models.IncomingPokemon) {
+	out := make(chan models.IncomingPokemon)
+
+	go func() {
+		defer close(out)
+		// fan out pattern
+		workers := make([]<-chan models.IncomingPokemon, numWorkers)
+		for i := range workers {
+			workers[i] = r.feedPokemonWithAbility(queue)
+		}
+
+		// fan in pattern
+		for incomingPokemon := range fanIn(workers...) {
+			if incomingPokemon.Error != nil {
+				out <- models.IncomingPokemon{
+					Pokemon: models.Pokemon{},
+					Error:   incomingPokemon.Error,
+				}
+				return
+			}
+
+			out <- models.IncomingPokemon{
+				Pokemon: incomingPokemon.Pokemon,
+				Error:   nil,
+			}
+		}
+	}()
+
+	return ctx, out
+}
+
+func (r Refresher) save(ctx context.Context, queue <-chan models.IncomingPokemon) <-chan error {
+	out := make(chan error)
+
+	go func() {
+		defer close(out)
+		var batch []models.Pokemon
+		const batchSize = 2
+		for pokemonIncoming := range queue {
+
+			if pokemonIncoming.Error != nil {
+				out <- pokemonIncoming.Error
+				return
+			}
+
+			if len(batch) < batchSize {
+				batch = append(batch, pokemonIncoming.Pokemon)
+			} else {
+				saveErr := r.Save(ctx, batch)
+				if saveErr != nil {
+					out <- saveErr
+					return
+				}
+				batch = []models.Pokemon{pokemonIncoming.Pokemon}
+			}
+		}
+	}()
+
+	return out
+}
+
+func (r Refresher) feedPokemonWithAbility(queue <-chan models.IncomingPokemon) <-chan models.IncomingPokemon {
 	out := make(chan models.IncomingPokemon)
 	go func() {
-		for ip := range incomingPokemon {
+		defer close(out)
+		for ip := range queue {
 
 			if ip.Error != nil {
 				out <- ip
@@ -97,8 +144,6 @@ func (r Refresher) feedPokemonWithAbility(incomingPokemon <-chan models.Incoming
 				Error:   nil,
 			}
 		}
-
-		close(out)
 	}()
 
 	return out

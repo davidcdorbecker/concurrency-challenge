@@ -66,6 +66,8 @@ func (p Provider) FillCSV(c *gin.Context) {
 // time for 40 records: 18.19 seconds
 // concurrency pattern: fan-in-fan-out
 // improvement: with 3 workers, 40 records : 5.55 seconds
+// concurrency pattern: pipeline
+// we can see in real time the data pushing in redis by batches
 func (p Provider) RefreshCache(c *gin.Context) {
 	if err := p.Refresh(c); err != nil {
 		c.Status(http.StatusInternalServerError)

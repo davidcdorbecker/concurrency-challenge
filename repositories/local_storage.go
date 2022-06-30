@@ -88,16 +88,21 @@ func parseCSVData(record []string) models.IncomingPokemon {
 	}
 }
 
-func (l LocalStorage) Read() (<-chan models.IncomingPokemon, error) {
+func (l LocalStorage) Read() (<-chan models.IncomingPokemon) {
+	out := make(chan models.IncomingPokemon)
 	file, fErr := os.Open(filePath)
 	if fErr != nil {
-		return nil, fErr
+		out <- models.IncomingPokemon{
+			Pokemon: models.Pokemon{},
+			Error:   fErr,
+		}
+		file.Close()
+		return  out
 	}
 
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	out := make(chan models.IncomingPokemon)
 	go func() {
 		reader := csv.NewReader(file)
 		_, err := reader.Read()
@@ -133,5 +138,5 @@ func (l LocalStorage) Read() (<-chan models.IncomingPokemon, error) {
 		file.Close()
 	}()
 
-	return out, nil
+	return out
 }
