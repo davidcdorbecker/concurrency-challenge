@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"concurrency-challenge/models"
 
@@ -20,7 +21,7 @@ func NewProvider(fetcher fetcher, refresher refresher, getter getter) Provider {
 }
 
 type fetcher interface {
-	Fetch(from, to int) error
+	Fetch(ctx context.Context, from, to int) error
 }
 
 type refresher interface {
@@ -44,7 +45,10 @@ func (p Provider) FillCSV(c *gin.Context) {
 		return
 	}
 
-	if err := p.Fetch(requestBody.From, requestBody.To); err != nil {
+	ctxWithTimeout, cancel := context.WithTimeout(c, 10 * time.Minute)
+	defer cancel()
+
+	if err := p.Fetch(ctxWithTimeout, requestBody.From, requestBody.To); err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
