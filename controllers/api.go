@@ -9,14 +9,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type Provider struct {
+type API struct {
 	fetcher
 	refresher
 	getter
 }
 
-func NewProvider(fetcher fetcher, refresher refresher, getter getter) Provider {
-	return Provider{fetcher, refresher, getter}
+func NewAPI(fetcher fetcher, refresher refresher, getter getter) API {
+	return API{fetcher, refresher, getter}
 }
 
 type fetcher interface {
@@ -31,8 +31,8 @@ type getter interface {
 	GetPokemons(context.Context) ([]models.Pokemon, error)
 }
 
-//FillCSV fill the local CSV to data form PokeAPI. By default will fetch from id 1 to 100 unless there are other information on the body
-func (p Provider) FillCSV(c *gin.Context) {
+//FillCSV fill the local CSV with data from PokeAPI. By default will fetch from id 1 to 10 unless there are other information on the body
+func (api API) FillCSV(c *gin.Context) {
 
 	requestBody := struct {
 		From int `json:"from"`
@@ -44,7 +44,7 @@ func (p Provider) FillCSV(c *gin.Context) {
 		return
 	}
 
-	if err := p.Fetch(requestBody.From, requestBody.To); err != nil {
+	if err := api.Fetch(requestBody.From, requestBody.To); err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
@@ -53,8 +53,8 @@ func (p Provider) FillCSV(c *gin.Context) {
 }
 
 //RefreshCache feeds the csv data and save in redis
-func (p Provider) RefreshCache(c *gin.Context) {
-	if err := p.Refresh(c); err != nil {
+func (api API) RefreshCache(c *gin.Context) {
+	if err := api.Refresh(c); err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
@@ -63,8 +63,8 @@ func (p Provider) RefreshCache(c *gin.Context) {
 }
 
 //GetPokemons return all pokemons in cache
-func (p Provider) GetPokemons(c *gin.Context) {
-	pokemons, err := p.getter.GetPokemons(c)
+func (api API) GetPokemons(c *gin.Context) {
+	pokemons, err := api.getter.GetPokemons(c)
 	if err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
